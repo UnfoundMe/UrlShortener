@@ -10,8 +10,14 @@ namespace UrlShortener.Api.Tests.Modules.Links.Endpoints;
 // configured with a low PermitLimit (RateLimitedLinksApiFixture.PermitLimit) so it doesn't
 // interfere with — or get tripped up by — the many other POST /links calls in LinksApiCollection.
 [Collection(RateLimitedLinksApiCollection.Name)]
-public class LinksRateLimitingTests(RateLimitedLinksApiFixture fixture)
+public class LinksRateLimitingTests(RateLimitedLinksApiFixture fixture) : IAsyncLifetime
 {
+    // The fixture (and its Redis-backed rate limiter) is shared across every test in this class,
+    // so without a reset each test's quota would carry over from whichever test ran before it.
+    public Task InitializeAsync() => fixture.ResetRateLimitStateAsync();
+
+    public Task DisposeAsync() => Task.CompletedTask;
+
     private async Task<HttpClient> CreateAuthedClientAsync()
     {
         var client = fixture.CreateClient();

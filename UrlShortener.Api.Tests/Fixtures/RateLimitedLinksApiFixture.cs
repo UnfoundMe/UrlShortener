@@ -41,6 +41,8 @@ public class RateLimitedLinksApiFixture : IAsyncLifetime
     {
         await Task.WhenAll(_postgres.StartAsync(), _redis.StartAsync());
 
+        _redisConnection = await ConnectionMultiplexer.ConnectAsync(_redis.GetConnectionString());
+
         await WebApplicationFactoryBuildGate.RunAsync(async () =>
         {
             _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -59,6 +61,20 @@ public class RateLimitedLinksApiFixture : IAsyncLifetime
         });
     }
 
+    // The rate limiter is keyed by client IP only, and the TestServer always reports the same
+    // loopback address, so every test in the class shares one Redis-backed counter. Each test
+    // clears it first so a prior test's requests don't count against the next one's PermitLimit.
+    public async Task ResetRateLimitStateAsync()
+    {
+        var endpoint = _redisConnection!.GetEndPoints().Single();
+        var server = _redisConnection.GetServer(endpoint);
+
+        await foreach (var key in server.KeysAsync(pattern: "ratelimit:shorten:*"))
+        {
+            await _redisConnection.GetDatabase().KeyDeleteAsync(key);
+        }
+    }
+
     public async Task<string> CreateApiKeyAsync(string ownerName = "Rate Limit Test Owner")
     {
         using var scope = Factory.Services.CreateScope();
@@ -73,6 +89,11 @@ public class RateLimitedLinksApiFixture : IAsyncLifetime
         if (_factory is not null)
         {
             await _factory.DisposeAsync();
+        }
+
+        if (_redisConnection is not null)
+        {
+            await _redisConnection.DisposeAsync();
         }
 
         await _postgres.DisposeAsync();
