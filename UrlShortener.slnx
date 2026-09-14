@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="UrlShortener.Api.Tests/UrlShortener.Api.Tests.csproj" />
+  <Project Path="UrlShortener.Api/UrlShortener.Api.csproj" />
+</Solution>

@@ -1,0 +1,73 @@
+name: urlshortener
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-urlshortener}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env — see .env.example}
+    volumes:
+      # Named volume only on Postgres — it's the system of record and must survive restarts.
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-urlshortener}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    # Intentionally no volume: Redis is a cache-aside layer only (docs/url-shortener-plan.md,
+    # decisions #2/#6) — Postgres is the source of truth, so a Redis restart is just a wave of
+    # cache misses, not data loss.
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: final
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
+      ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=${POSTGRES_DB:-urlshortener};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env — see .env.example}
+      ConnectionStrings__Redis: redis:6379
+      # POST /auth/api-keys is unauthenticated and has no abuse protection — testing/demo use
+      # only. Off by default; set ENABLE_SELF_SERVE_API_KEYS=true in .env to turn it on.
+      Auth__EnableSelfServeApiKeys: ${ENABLE_SELF_SERVE_API_KEYS:-false}
+    ports:
+      - "${API_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # One-off migration runner (Task 12, docs/url-shortener-tasks.md): the api image never calls
+  # Database.Migrate() on startup, so schema changes are applied as an explicit, race-safe step:
+  #   docker compose run --rm migrate
+  # Re-running against an already-migrated database is a no-op.
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: build
+    working_dir: /src
+    entrypoint: ["dotnet", "ef", "database", "update", "--project", "UrlShortener.Api/UrlShortener.Api.csproj"]
+    environment:
+      ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=${POSTGRES_DB:-urlshortener};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env — see .env.example}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles: ["tools"]
+
+volumes:
+  postgres-data:

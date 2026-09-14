@@ -1,0 +1,10 @@
+**/bin/
+**/obj/
+**/.vs/
+**/.vscode/
+.git/
+.gitignore
+.env
+*.md
+docker-compose.yml
+UrlShortener.Api.Tests/
