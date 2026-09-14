@@ -66,16 +66,26 @@ public class LinksApiFixture : IAsyncLifetime
     {
         await Task.WhenAll(_postgres.StartAsync(), _redis.StartAsync());
 
-        _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        await WebApplicationFactoryBuildGate.RunAsync(async () =>
         {
-            builder.UseSetting("ConnectionStrings:Postgres", _postgres.GetConnectionString());
-            builder.UseSetting("ConnectionStrings:Redis", _redis.GetConnectionString());
-            builder.ConfigureLogging(logging => logging.AddProvider(LogEntries));
-        });
+            _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("ConnectionStrings:Postgres", _postgres.GetConnectionString());
+                builder.UseSetting("ConnectionStrings:Redis", _redis.GetConnectionString());
+                // All POST /links calls across this shared collection resolve to the same client IP
+                // under TestServer, so the default 10/min limit would make unrelated tests start
+                // tripping each other's rate limit. Rate-limiting behavior itself is covered by a
+                // dedicated, isolated fixture (RateLimitedLinksApiFixture) instead.
+                builder.UseSetting("RateLimiting:PermitLimit", "100000");
+                builder.ConfigureLogging(logging => logging.AddProvider(LogEntries));
+            });
 
-        using var scope = Factory.Services.CreateScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        await dbContext.Database.MigrateAsync();
+            using var scope = Factory.Services.CreateScope();
+            var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            await dbContext.Database.MigrateAsync();
+
+            return true;
+        });
     }
 
     // Mints a real, usable API key the same way the "seed-api-key" CLI bootstrap does, so

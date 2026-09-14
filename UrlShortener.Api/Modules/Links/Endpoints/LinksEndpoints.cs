@@ -31,7 +31,8 @@ public static class LinksEndpoints
                     return Results.BadRequest(new { error = ex.Message });
                 }
             })
-            .RequireAuthorization();
+            .RequireAuthorization()
+            .AddEndpointFilter<IpRateLimitFilter>();
 
         return app;
     }
