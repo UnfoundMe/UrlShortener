@@ -60,7 +60,7 @@ builder.Services.AddSwaggerGen(options =>
 
 // Each module owns its own DI registrations; Program.cs only composes them.
 builder.Services.AddAuthModule();
-builder.Services.AddLinksModule();
+builder.Services.AddLinksModule(builder.Configuration);
 builder.Services.AddAnalyticsModule();
 
 var app = builder.Build();

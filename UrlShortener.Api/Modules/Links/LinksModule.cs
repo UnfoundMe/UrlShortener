@@ -8,13 +8,19 @@ namespace UrlShortener.Api.Modules.Links;
 // the Links module goes through these two extension methods, called once from Program.cs.
 public static class LinksModule
 {
-    public static IServiceCollection AddLinksModule(this IServiceCollection services)
+    public static IServiceCollection AddLinksModule(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddScoped<IShortCodeGenerator, Base62ShortCodeGenerator>();
         services.AddScoped<ILinkCacheService, RedisLinkCacheService>();
         services.AddScoped<ILinkService, LinkService>();
         services.AddScoped<ILinkClickCounterUpdater, LinkClickCounterUpdater>();
         services.AddScoped<ILinkLookup, LinkLookup>();
+
+        services.Configure<RateLimitOptions>(configuration.GetSection("RateLimiting"));
+        // Singleton: wraps the already-singleton IConnectionMultiplexer and holds no per-request
+        // state, and AddEndpointFilter<IpRateLimitFilter>() builds its filter from the root
+        // service provider at endpoint-construction time, so a scoped dependency here would fail.
+        services.AddSingleton<IIpRateLimiter, RedisIpRateLimiter>();
 
         return services;
     }
