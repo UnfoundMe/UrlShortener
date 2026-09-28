@@ -20,6 +20,15 @@ builder.Host.UseSerilog(
         .ReadFrom.Configuration(context.Configuration)
         .ReadFrom.Services(services)
         .WriteTo.Console(),
+    // preserveStaticLogger: without this, UseSerilog reassigns the process-wide static
+    // Log.Logger on every host build. Tests boot multiple WebApplicationFactory<Program>
+    // instances in one process (see WebApplicationFactoryBuildGate), and each DI-registered
+    // ILoggerProvider reads that same ambient static logger by default — so a later factory
+    // build silently redirects an earlier, still-running factory's log output (and its
+    // writeToProviders forwarding) to the new logger, e.g. breaking the test-only capturing
+    // provider one factory relies on. preserveStaticLogger: true binds each host to its own
+    // logger instance instead, independent of the static field.
+    preserveStaticLogger: true,
     // Task 9 (docs/url-shortener-tasks.md): also forward events to any ILoggerProvider
     // registered in DI (e.g. a test-only capturing provider) instead of Serilog being the
     // sole consumer of ILogger<T> calls.
